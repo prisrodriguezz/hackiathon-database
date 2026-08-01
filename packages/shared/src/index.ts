@@ -1,27 +1,21 @@
-export type DocumentStatus = 'pending' | 'parsing' | 'parsed' | 'failed';
+export type LawDocumentStatus = "uploaded" | "processing" | "ready" | "failed";
 
-export interface LegislativeDocument {
+export type LawRelationType =
+  | "related"
+  | "contradicts"
+  | "affects"
+  | "replaces";
+
+export interface LawDocument {
   id: string;
   title: string;
-  status: DocumentStatus;
-  sourceUrl?: string;
-  content?: string;
-  createdAt: string;
-  updatedAt?: string;
+  originalFileName: string;
+  status: LawDocumentStatus;
 }
 
-export interface ParseResult {
-  document: LegislativeDocument;
-  markdown: string;
-  pages: number;
-}
-
-export function statusLabel(status: DocumentStatus): string {
-  const labels: Record<DocumentStatus, string> = {
-    pending: 'Pendiente',
-    parsing: 'Procesando',
-    parsed: 'Procesado',
-    failed: 'Fallido',
-  };
-  return labels[status];
+export interface LawRelation {
+  lawId: string;
+  type: LawRelationType;
+  explanation: string;
+  confidence: number;
 }

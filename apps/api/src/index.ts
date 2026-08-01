@@ -1,13 +1,12 @@
-import { Hono } from 'hono';
-import { example } from './routes/example';
+import { createServer } from "node:http";
 
-const app = new Hono();
+const port = Number(process.env.API_PORT ?? 3000);
 
-app.get('/', (c) => c.json({ name: '@legislative/api', status: 'ok' }));
-app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
-app.route('/api', example);
+const server = createServer((_request, response) => {
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify({ name: "law-analyzer-api", status: "ok" }));
+});
 
-const port = Number(process.env.PORT ?? 3000);
-const server = Bun.serve({ port, fetch: app.fetch });
-
-console.log(`@legislative/api listening on http://localhost:${server.port}`);
+server.listen(port, () => {
+  console.log(`API listening on port ${port}`);
+});

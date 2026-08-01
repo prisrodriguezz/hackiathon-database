@@ -1,11 +1,10 @@
 node_modules/
 dist/
-*.tsbuildinfo
-.drizzle/
-drizzle/
-*.log
+build/
 .env
 .env.*
 !.env.example
-.DS_Store
+storage/*
+!storage/.gitkeep
 coverage/
+.DS_Store

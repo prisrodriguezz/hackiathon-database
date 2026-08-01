@@ -1,24 +1,12 @@
 {
-  "name": "@legislative/shared",
+  "name": "@law-analyzer/shared",
   "version": "0.1.0",
   "private": true,
-  "description": "Tipos y utilidades compartidas entre todos los módulos del monorepo.",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": ["dist"],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "tsc -w",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "typescript": "catalog:"
+    "lint": "tsc --noEmit"
   }
 }
