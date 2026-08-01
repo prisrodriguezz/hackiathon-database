@@ -1,9 +1,43 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 
-export type SqliteDatabase = DatabaseSync;
+export interface SqliteStatement {
+  all(...parameters: unknown[]): unknown[];
+  get(...parameters: unknown[]): unknown;
+  run(...parameters: unknown[]): unknown;
+}
+
+export interface SqliteDatabase {
+  exec(sql: string): void;
+  prepare(sql: string): SqliteStatement;
+  close(): void;
+}
+
+class BunSqliteDatabase implements SqliteDatabase {
+  private readonly database: Database;
+
+  constructor(path: string) {
+    this.database = new Database(path);
+  }
+
+  exec(sql: string): void {
+    this.database.exec(sql);
+  }
+
+  prepare(sql: string): SqliteStatement {
+    const statement = this.database.query(sql);
+    return {
+      all: (...parameters) => statement.all(...(parameters as never[])),
+      get: (...parameters) => statement.get(...(parameters as never[])),
+      run: (...parameters) => statement.run(...(parameters as never[])),
+    };
+  }
+
+  close(): void {
+    this.database.close();
+  }
+}
 
 export function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
@@ -34,10 +68,10 @@ export function getDatabasePath(databaseUrl: string): string {
 
 function defaultMigrationDirectory(): string {
   const candidates = [
-    fileURLToPath(new URL("../migrations/", import.meta.url)),
-    fileURLToPath(new URL("../../../migrations/", import.meta.url)),
     resolve(process.cwd(), "migrations"),
     resolve(process.cwd(), "packages/database/migrations"),
+    resolve(process.cwd(), "../../migrations"),
+    resolve(process.cwd(), "../../packages/database/migrations"),
   ];
   const directory = candidates.find((candidate) => existsSync(candidate));
   if (!directory) {
@@ -102,7 +136,7 @@ export function openDatabase(databaseUrl = getDatabaseUrl()): SqliteDatabase {
     mkdirSync(dirname(databasePath), { recursive: true });
   }
 
-  const database = new DatabaseSync(databasePath);
+  const database = new BunSqliteDatabase(databasePath);
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA busy_timeout = 5000");
   if (databasePath !== ":memory:") {

@@ -32,8 +32,10 @@ import {
 } from "@law-analyzer/database";
 import {
   analyzeLaw,
-  getAIConfig,
+  MistralOCRClient,
   OpenAICompatibleClient,
+  type AIConfig,
+  type MistralOCRConfig,
 } from "@law-analyzer/ai";
 import {
   extractText,
@@ -41,6 +43,10 @@ import {
   validatePdf,
 } from "@law-analyzer/parser";
 import type { AnalysisReport, LawFinding } from "@law-analyzer/shared";
+import {
+  getActiveAIConfig,
+  getActiveMistralOCRConfig,
+} from "./ai-provider.js";
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -136,7 +142,19 @@ export async function processDocument(
   updateDocumentStatus(database, documentId, "processing");
   try {
     const bytes = await readFile(document.filePath);
-    const parsed = await extractText(bytes);
+    let usedOCR = false;
+    const ocrConfig = getActiveMistralOCRConfig();
+    const parsed = await extractText(
+      bytes,
+      ocrConfig
+        ? {
+            ocr: async (pdf) => {
+              usedOCR = true;
+              return extractWithMistralOCR(pdf, ocrConfig);
+            },
+          }
+        : undefined,
+    );
     if (!parsed.hasText) {
       updateDocumentStatus(database, documentId, "pending_review", {
         textOrigin: "ocr",
@@ -155,11 +173,11 @@ export async function processDocument(
           fragment.text.match(/(?:art(?:iculo|\.)?)\s*([0-9]+)/i)?.[1],
         positionStart: fragment.positionStart,
         positionEnd: fragment.positionEnd,
-        textOrigin: "extracted",
+        textOrigin: usedOCR ? "ocr" : "extracted",
       });
     }
     updateDocumentStatus(database, documentId, "ready", {
-      textOrigin: "extracted",
+        textOrigin: usedOCR ? "ocr" : "extracted",
     });
     updateProcessingTask(database, taskId, "completed");
   } catch (error) {
@@ -170,6 +188,23 @@ export async function processDocument(
     updateDocumentStatus(database, documentId, "failed");
     updateProcessingTask(database, taskId, "failed", message);
   }
+}
+
+async function extractWithMistralOCR(
+  pdf: Uint8Array,
+  config: MistralOCRConfig,
+): Promise<Awaited<ReturnType<typeof extractText>>> {
+  const result = await new MistralOCRClient(config).extract(pdf);
+  const pages = result.pages.map((page) => ({
+    pageNumber: page.index + 1,
+    text: page.markdown.trim(),
+  }));
+  return {
+    text: pages.map((page) => page.text).filter(Boolean).join("\n\n"),
+    pageCount: pages.length,
+    pages,
+    hasText: pages.some((page) => page.text.length > 0),
+  };
 }
 
 function attachSources(
@@ -200,6 +235,7 @@ async function executeAnalysis(
   analysisId: string,
   taskId: string,
   goal?: string,
+  config: AIConfig = getActiveAIConfig(),
 ): Promise<void> {
   const analysis = getAnalysis(database, analysisId);
   if (!analysis) return;
@@ -258,6 +294,7 @@ async function executeAnalysis(
         const report = await analyzeLaw(text, {
           goal: `${goal ?? "Analisis juridico"}. ${agent.question}`,
           agentType: agent.type,
+          config,
         });
         reports.push(report);
         updateAgentRun(database, run.id, "completed", report);
@@ -286,7 +323,7 @@ async function executeAnalysis(
       affectedAreas: [
         ...new Set(reports.flatMap((item) => item.affectedAreas)),
       ],
-      model: getAIConfig().model,
+      model: config.model,
     };
     const nodeCache = new Map<string, string>();
     const billNode =
@@ -353,14 +390,18 @@ export function queueAnalysis(
   documentId: string,
   goal?: string,
 ): { id: string } {
-  const model = getAIConfig().model;
-  const analysis = createAnalysis(database, { documentId, model });
+  const config = getActiveAIConfig();
+  const analysis = createAnalysis(database, {
+    documentId,
+    provider: config.provider,
+    model: config.model,
+  });
   const task = createProcessingTask(database, {
     documentId,
     taskType: "analysis",
   });
   setTimeout(
-    () => void executeAnalysis(database, analysis.id, task.id, goal),
+    () => void executeAnalysis(database, analysis.id, task.id, goal, config),
     0,
   );
   return { id: analysis.id };
@@ -402,7 +443,7 @@ export async function answerConversation(
       (fragment) => `[Pagina ${fragment.pageNumber ?? "?"}] ${fragment.text}`,
     )
     .join("\n");
-  const client = new OpenAICompatibleClient();
+  const client = new OpenAICompatibleClient(getActiveAIConfig());
   let answer: string;
   if (client.config.simulated) {
     answer = latest?.summary

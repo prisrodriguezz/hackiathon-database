@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
-import { api, relationLabels, validatePdf, validatePdfSignature, type ApiAnalysis, type ApiDocument, type ConversationMessage } from "./api";
+import { api, relationLabels, validateAIProviderInput, validatePdf, validatePdfSignature, type AIProviderStatus, type ApiAnalysis, type ApiDocument, type ConversationMessage, type MistralOCRStatus } from "./api";
 import "./styles.css";
 
 type Phase = "empty" | "validating" | "processing" | "ready" | "warning" | "error";
@@ -74,6 +74,24 @@ function App() {
   const [filter, setFilter] = useState<EvidenceFilter>("all");
   const [selectedFinding, setSelectedFinding] = useState<number>();
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [aiSettingsOpen, setAISettingsOpen] = useState(false);
+  const [aiProvider, setAIProvider] = useState<AIProviderStatus>();
+  const [ocrProvider, setOCRProvider] = useState<MistralOCRStatus>();
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerModel, setProviderModel] = useState("");
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerError, setProviderError] = useState<string>();
+  const [providerNotice, setProviderNotice] = useState<string>();
+  const [providerTest, setProviderTest] = useState<{ model: string; latencyMs: number }>();
+  const [showProviderKey, setShowProviderKey] = useState(false);
+  const [ocrBaseUrl, setOCRBaseUrl] = useState("");
+  const [ocrApiKey, setOCRApiKey] = useState("");
+  const [ocrModel, setOCRModel] = useState("");
+  const [ocrError, setOCRError] = useState<string>();
+  const [ocrNotice, setOCRNotice] = useState<string>();
+  const [ocrTest, setOCRTest] = useState<{ model: string; latencyMs: number }>();
+  const [showOCRKey, setShowOCRKey] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const messageEnd = useRef<HTMLDivElement>(null);
 
@@ -81,6 +99,7 @@ function App() {
   const visibleFindings = useMemo(() => findings.filter((finding) => relationGroup(finding, filter)), [findings, filter]);
 
   useEffect(() => { messageEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, sending]);
+  useEffect(() => { void api.getAIProvider().then(({ provider, ocr }) => { setAIProvider(provider); setOCRProvider(ocr); }); }, []);
 
   function chooseFile(nextFile?: File) {
     if (!nextFile) return;
@@ -151,6 +170,100 @@ function App() {
 
   function reset() { setPhase("empty"); setSession(undefined); setFile(undefined); setTitle(""); setError(undefined); setMessages([]); setQuestion(""); setSelectedFinding(undefined); }
 
+  function openAISettings() {
+    setProviderBaseUrl(aiProvider?.baseUrl ?? "https://api.openai.com/v1");
+    setProviderModel(aiProvider?.model ?? "");
+    setProviderApiKey("");
+    setProviderError(undefined);
+    setProviderNotice(undefined);
+    setProviderTest(undefined);
+    setShowProviderKey(false);
+    setOCRBaseUrl(ocrProvider?.baseUrl ?? "https://api.mistral.ai/v1");
+    setOCRModel(ocrProvider?.model ?? "mistral-ocr-latest");
+    setOCRApiKey("");
+    setOCRError(undefined);
+    setOCRNotice(undefined);
+    setOCRTest(undefined);
+    setShowOCRKey(false);
+    setAISettingsOpen(true);
+  }
+
+  async function testProvider() {
+    const input = { baseUrl: providerBaseUrl, apiKey: providerApiKey, model: providerModel };
+    const validation = validateAIProviderInput(input);
+    if (validation) { setProviderError(validation); return; }
+    setProviderBusy(true); setProviderError(undefined); setProviderNotice(undefined); setProviderTest(undefined);
+    try {
+      const { test } = await api.testAIProvider(input);
+      setProviderTest(test);
+      setProviderNotice("Conexión válida. Todavía no se aplicó a nuevos análisis.");
+    } catch (caught) { setProviderError(caught instanceof Error ? caught.message : "No se pudo probar la conexión."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function saveProvider() {
+    const input = { baseUrl: providerBaseUrl, apiKey: providerApiKey, model: providerModel };
+    const validation = validateAIProviderInput(input);
+    if (validation) { setProviderError(validation); return; }
+    setProviderBusy(true); setProviderError(undefined); setProviderNotice(undefined);
+    try {
+      const { provider } = await api.saveAIProvider(input);
+      setAIProvider(provider);
+      setProviderTest(provider.test);
+      setProviderNotice("Configuración guardada. Se aplicará a los nuevos análisis.");
+      setProviderApiKey("");
+    } catch (caught) { setProviderError(caught instanceof Error ? caught.message : "No se pudo guardar la configuración."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function selectSimulated() {
+    setProviderBusy(true); setProviderError(undefined);
+    try { const { provider } = await api.useSimulatedAI(); setAIProvider(provider); setProviderApiKey(""); setProviderNotice("Modo simulado activo. No se usarán credenciales externas."); }
+    catch (caught) { setProviderError(caught instanceof Error ? caught.message : "No se pudo activar el modo simulado."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function removeProvider() {
+    setProviderBusy(true); setProviderError(undefined);
+    try { const { provider } = await api.removeAIProvider(); setAIProvider(provider); setProviderBaseUrl(""); setProviderModel(""); setProviderApiKey(""); setProviderNotice("Credenciales eliminadas. Se activó el modo simulado."); }
+    catch (caught) { setProviderError(caught instanceof Error ? caught.message : "No se pudieron eliminar las credenciales."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function testOCRProvider() {
+    const input = { baseUrl: ocrBaseUrl, apiKey: ocrApiKey, model: ocrModel };
+    const validation = validateAIProviderInput(input);
+    if (validation) { setOCRError(validation); return; }
+    setProviderBusy(true); setOCRError(undefined); setOCRNotice(undefined); setOCRTest(undefined);
+    try {
+      const { test } = await api.testMistralOCR(input);
+      setOCRTest(test);
+      setOCRNotice("Conexión válida. Mistral OCR se usará para PDFs escaneados al guardar.");
+    } catch (caught) { setOCRError(caught instanceof Error ? caught.message : "No se pudo probar Mistral OCR."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function saveOCRProvider() {
+    const input = { baseUrl: ocrBaseUrl, apiKey: ocrApiKey, model: ocrModel };
+    const validation = validateAIProviderInput(input);
+    if (validation) { setOCRError(validation); return; }
+    setProviderBusy(true); setOCRError(undefined); setOCRNotice(undefined);
+    try {
+      const { ocr } = await api.saveMistralOCR(input);
+      setOCRProvider(ocr);
+      setOCRNotice("Mistral OCR guardado. Se aplicará a los nuevos documentos escaneados.");
+      setOCRApiKey("");
+    } catch (caught) { setOCRError(caught instanceof Error ? caught.message : "No se pudo guardar Mistral OCR."); }
+    finally { setProviderBusy(false); }
+  }
+
+  async function removeOCRProvider() {
+    setProviderBusy(true); setOCRError(undefined);
+    try { const { ocr } = await api.removeMistralOCR(); setOCRProvider(ocr); setOCRApiKey(""); setOCRNotice("Mistral OCR eliminado. Los PDFs escaneados quedarán pendientes de revisión."); }
+    catch (caught) { setOCRError(caught instanceof Error ? caught.message : "No se pudo eliminar Mistral OCR."); }
+    finally { setProviderBusy(false); }
+  }
+
   function clearHistory() {
     localStorage.removeItem(HISTORY_KEY);
     setHistory([]);
@@ -172,9 +285,9 @@ function App() {
 
   const activeFinding = selectedFinding === undefined ? undefined : findings[selectedFinding];
   return <div className="app-shell">
-    <header className="topbar">
-      <a href="#inicio" className="brand"><span className="brand-mark" /><span className="brand-name">ley<span>abierta</span></span></a>
-      <div className="topbar-right"><span className="service-note"><span className="service-dot" /> Base normativa conectada</span><button className="mobile-evidence-toggle" onClick={() => setEvidenceOpen((open) => !open)}>{evidenceOpen ? "Cerrar" : "Evidencia"}</button><span className="avatar">TS</span></div>
+     <header className="topbar">
+       <a href="#inicio" className="brand"><span className="brand-mark" /><span className="brand-name">ley<span>abierta</span></span></a>
+       <div className="topbar-right"><span className="service-note"><span className="service-dot" /> Base normativa conectada</span><button className="ai-settings-button" onClick={openAISettings}>Configuración de IA</button><button className="mobile-evidence-toggle" onClick={() => setEvidenceOpen((open) => !open)}>{evidenceOpen ? "Cerrar" : "Evidencia"}</button><span className="avatar">TS</span></div>
     </header>
     <div className="workspace">
       <aside className="sidebar">
@@ -206,9 +319,79 @@ function App() {
         <div className="evidence-tabs">{([ ["all", "Todas"], ["related", "Relacionadas"], ["contradictions", "Contradicciones"], ["affected", "Afectadas"], ["changes", "Cambios"] ] as [EvidenceFilter, string][]).map(([key, label]) => <button key={key} className={`evidence-tab ${filter === key ? "active" : ""}`} onClick={() => setFilter(key)}>{label}</button>)}</div>
         {visibleFindings.length ? <div className="finding-list">{visibleFindings.map((finding) => { const index = findings.indexOf(finding); return <button key={`${finding.lawId}-${index}`} className={`finding-card ${selectedFinding === index ? "selected" : ""}`} onClick={() => setSelectedFinding(index)}><div className="finding-top"><span className="finding-law">{finding.lawId}</span><span className="relation-tag">{relationLabels[finding.type]}</span></div><p className="finding-explanation">{finding.explanation}</p><div className="finding-footer"><span>{finding.sourceFragmentIds.length ? "Fuente en el documento" : "Sin fuente directa"}</span><span className="confidence"><span className="confidence-bar"><span style={{ width: `${Math.round(finding.confidence * 100)}%` }} /></span>{Math.round(finding.confidence * 100)}%</span></div></button>})}</div> : <div className="empty-panel"><Icon name="search" size={27} /><div>{phase === "empty" ? "Carga un documento para explorar sus relaciones." : "No hay hallazgos en esta categoría."}</div></div>}
         {activeFinding && <div className="detail-panel"><h3>{activeFinding.lawId}</h3><p>{activeFinding.explanation}</p><span className="detail-label">Referencias</span>{activeFinding.sourceFragmentIds.length ? activeFinding.sourceFragmentIds.map((id) => <span className="detail-source" key={id}>Fragmento {id.slice(0, 8)} · documento cargado</span>) : <span className="detail-source">No hay evidencia directa disponible</span>}{activeFinding.limitations.length > 0 && <p className="inference-note">Inferencia asistida: {activeFinding.limitations[0]}</p>}</div>}
-      </aside>
-    </div>
-  </div>;
+       </aside>
+     </div>
+      {aiSettingsOpen && <AIProviderModal provider={aiProvider} baseUrl={providerBaseUrl} apiKey={providerApiKey} model={providerModel} busy={providerBusy} error={providerError} notice={providerNotice} test={providerTest} showKey={showProviderKey} setBaseUrl={setProviderBaseUrl} setApiKey={setProviderApiKey} setModel={setProviderModel} setShowKey={setShowProviderKey} onTest={() => void testProvider()} onSave={() => void saveProvider()} onSimulated={() => void selectSimulated()} onRemove={() => void removeProvider()} ocr={ocrProvider} ocrBaseUrl={ocrBaseUrl} ocrApiKey={ocrApiKey} ocrModel={ocrModel} ocrError={ocrError} ocrNotice={ocrNotice} ocrTest={ocrTest} showOCRKey={showOCRKey} setOCRBaseUrl={setOCRBaseUrl} setOCRApiKey={setOCRApiKey} setOCRModel={setOCRModel} setShowOCRKey={setShowOCRKey} onOCRTest={() => void testOCRProvider()} onOCRSave={() => void saveOCRProvider()} onOCRRemove={() => void removeOCRProvider()} onClose={() => setAISettingsOpen(false)} />}
+   </div>;
+}
+
+function providerStatusText(status?: AIProviderStatus) {
+  if (!status || status.status === "not_configured") return "Sin configurar";
+  if (status.status === "simulated") return "Modo simulado";
+  if (status.status === "connection_failed") return "Error de conexión";
+  if (status.status === "invalid_configuration") return "Configuración inválida";
+  return "Proveedor configurado";
+}
+
+function AIProviderModal(props: {
+  provider?: AIProviderStatus;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  busy: boolean;
+  error?: string;
+  notice?: string;
+  test?: { model: string; latencyMs: number };
+  showKey: boolean;
+  setBaseUrl: (value: string) => void;
+  setApiKey: (value: string) => void;
+  setModel: (value: string) => void;
+  setShowKey: (value: boolean) => void;
+  onTest: () => void;
+  onSave: () => void;
+  onSimulated: () => void;
+  onRemove: () => void;
+  ocr?: MistralOCRStatus;
+  ocrBaseUrl: string;
+  ocrApiKey: string;
+  ocrModel: string;
+  ocrError?: string;
+  ocrNotice?: string;
+  ocrTest?: { model: string; latencyMs: number };
+  showOCRKey: boolean;
+  setOCRBaseUrl: (value: string) => void;
+  setOCRApiKey: (value: string) => void;
+  setOCRModel: (value: string) => void;
+  setShowOCRKey: (value: boolean) => void;
+  onOCRTest: () => void;
+  onOCRSave: () => void;
+  onOCRRemove: () => void;
+  onClose: () => void;
+}) {
+  const configured = props.provider?.status === "configured" || props.provider?.status === "connection_failed";
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !props.busy) props.onClose(); }}><section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title"><div className="settings-header"><div><p className="eyebrow">Proveedor de IA</p><h2 id="ai-settings-title">Configuración de IA</h2></div><button className="modal-close" type="button" onClick={props.onClose} disabled={props.busy} aria-label="Cerrar configuración"><Icon name="close" size={18} /></button></div><div className={`provider-status status-${props.provider?.status ?? "not_configured"}`}><span className="status-dot" /><div><strong>{providerStatusText(props.provider)}</strong>{props.provider?.model && <span>{props.provider.provider} · {props.provider.model}{props.provider.apiKeyMasked ? ` · ${props.provider.apiKeyMasked}` : ""}</span>}</div></div><p className="settings-help">La API key se envía únicamente al backend y se conserva solo durante esta sesión. La URL debe ser la base del proveedor, por ejemplo <code>https://api.openai.com/v1</code>, no una ruta de chat completions.</p><div className="settings-fields"><label><span className="field-label">URL base</span><input className="field-input" value={props.baseUrl} onChange={(event) => props.setBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" autoComplete="url" /></label><label><span className="field-label">API key</span><div className="secret-field"><input className="field-input" type={props.showKey ? "text" : "password"} value={props.apiKey} onChange={(event) => props.setApiKey(event.target.value)} placeholder={configured ? "Ingresa una clave para reemplazarla" : "sk-..."} autoComplete="new-password" /><button type="button" onClick={() => props.setShowKey(!props.showKey)}>{props.showKey ? "Ocultar" : "Mostrar"}</button></div></label><label><span className="field-label">Modelo</span><input className="field-input" value={props.model} onChange={(event) => props.setModel(event.target.value)} placeholder="gpt-4o-mini" /></label></div>{props.error && <div className="settings-message settings-error" role="alert"><Icon name="alert" size={16} />{props.error}</div>}{props.notice && <div className="settings-message settings-success">{props.notice}</div>}{props.test && <div className="connection-result">Modelo validado: <strong>{props.test.model}</strong> · latencia aproximada {props.test.latencyMs} ms</div>}<MistralOCRSettings provider={props.ocr} baseUrl={props.ocrBaseUrl} apiKey={props.ocrApiKey} model={props.ocrModel} error={props.ocrError} notice={props.ocrNotice} test={props.ocrTest} showKey={props.showOCRKey} busy={props.busy} setBaseUrl={props.setOCRBaseUrl} setApiKey={props.setOCRApiKey} setModel={props.setOCRModel} setShowKey={props.setShowOCRKey} onTest={props.onOCRTest} onSave={props.onOCRSave} onRemove={props.onOCRRemove} /><div className="settings-actions"><button className="secondary-action" type="button" onClick={props.onSimulated} disabled={props.busy}>Usar modo simulado</button>{configured && <button className="danger-action" type="button" onClick={props.onRemove} disabled={props.busy}>Eliminar credenciales</button>}<span className="action-spacer" /><button className="secondary-action" type="button" onClick={props.onClose} disabled={props.busy}>Cancelar</button><button className="secondary-action" type="button" onClick={props.onTest} disabled={props.busy}>{props.busy ? "Validando..." : "Probar conexión"}</button><button className="primary-action" type="button" onClick={props.onSave} disabled={props.busy}>{props.busy ? "Guardando..." : "Guardar configuración"}</button></div></section></div>;
+}
+
+function MistralOCRSettings(props: {
+  provider?: MistralOCRStatus;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  error?: string;
+  notice?: string;
+  test?: { model: string; latencyMs: number };
+  showKey: boolean;
+  busy: boolean;
+  setBaseUrl: (value: string) => void;
+  setApiKey: (value: string) => void;
+  setModel: (value: string) => void;
+  setShowKey: (value: boolean) => void;
+  onTest: () => void;
+  onSave: () => void;
+  onRemove: () => void;
+}) {
+  const configured = props.provider?.status === "configured" || props.provider?.status === "connection_failed";
+  return <div className="ocr-settings"><div className="settings-section-heading"><div><p className="eyebrow">Parser de documentos</p><h3>Mistral OCR</h3></div><div className={`ocr-status ${props.provider?.status ?? "not_configured"}`}><span className="status-dot" />{configured ? "Configurado" : "No configurado"}</div></div><p className="settings-help">Se usa automáticamente cuando el PDF no contiene texto extraíble. La clave se mantiene solo en el backend.</p><div className="settings-fields"><label><span className="field-label">URL base de Mistral OCR</span><input className="field-input" value={props.baseUrl} onChange={(event) => props.setBaseUrl(event.target.value)} placeholder="https://api.mistral.ai/v1" autoComplete="url" /></label><label><span className="field-label">API key de Mistral OCR</span><div className="secret-field"><input className="field-input" type={props.showKey ? "text" : "password"} value={props.apiKey} onChange={(event) => props.setApiKey(event.target.value)} placeholder={configured ? "Ingresa una clave para reemplazarla" : "..."} autoComplete="new-password" /><button type="button" onClick={() => props.setShowKey(!props.showKey)}>{props.showKey ? "Ocultar" : "Mostrar"}</button></div></label><label><span className="field-label">Modelo OCR</span><input className="field-input" value={props.model} onChange={(event) => props.setModel(event.target.value)} placeholder="mistral-ocr-latest" /></label></div>{props.error && <div className="settings-message settings-error" role="alert"><Icon name="alert" size={16} />{props.error}</div>}{props.notice && <div className="settings-message settings-success">{props.notice}</div>}{props.test && <div className="connection-result">Modelo OCR validado: <strong>{props.test.model}</strong> · latencia aproximada {props.test.latencyMs} ms</div>}<div className="settings-actions ocr-actions"><button className="secondary-action" type="button" onClick={props.onTest} disabled={props.busy}>{props.busy ? "Validando..." : "Probar Mistral OCR"}</button><button className="primary-action" type="button" onClick={props.onSave} disabled={props.busy}>{props.busy ? "Guardando..." : "Guardar Mistral OCR"}</button>{configured && <button className="danger-action" type="button" onClick={props.onRemove} disabled={props.busy}>Eliminar OCR</button>}</div></div>;
 }
 
 function EmptyState(props: { file?: File; title: string; setTitle: (value: string) => void; documentType: ApiDocument["documentType"]; setDocumentType: (value: ApiDocument["documentType"]) => void; dragging: boolean; setDragging: (value: boolean) => void; chooseFile: (file?: File) => void; fileInput: RefObject<HTMLInputElement>; processFile: () => void; error?: string; setError: (value: string | undefined) => void; reset: () => void; phase: Phase }) {

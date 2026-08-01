@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "test": "vitest run",
+    "start": "bun --env-file=../../.env dist/index.js",
+    "test": "bunx --bun vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -16,7 +16,6 @@
     "@law-analyzer/parser": "workspace:*"
   },
   "devDependencies": {
-    "tsx": "^4.16.0",
     "vitest": "^2.0.0"
   }
 }

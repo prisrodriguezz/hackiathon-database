@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter './apps/*' dev",
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "format": "prettier --write ."
+    "dev": "corepack pnpm --parallel --filter './apps/*' dev",
+    "build": "corepack pnpm -r build",
+    "test": "corepack pnpm -r test",
+    "lint": "corepack pnpm -r lint",
+    "format": "prettier --write .",
+    "db:seed": "bun scripts/seed.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

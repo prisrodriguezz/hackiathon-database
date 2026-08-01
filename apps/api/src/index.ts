@@ -16,6 +16,18 @@ import {
   queueAnalysis,
   storeUpload,
 } from "./services.js";
+import {
+  AIProviderError,
+  getAIProviderStatus,
+  getMistralOCRStatus,
+  removeAIProvider,
+  removeMistralOCR,
+  saveAIProvider,
+  saveMistralOCR,
+  testAIProvider,
+  testMistralOCR,
+  useSimulatedAI,
+} from "./ai-provider.js";
 
 const port = Number(process.env.API_PORT ?? 3000);
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 10 * 1024 * 1024);
@@ -37,6 +49,7 @@ function send(response: ServerResponse, status: number, body: unknown): void {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": "*",
     "access-control-allow-headers": "content-type",
+    "cache-control": "no-store",
   });
   response.end(JSON.stringify(body));
 }
@@ -139,7 +152,7 @@ async function handle(
     response.writeHead(204, {
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "content-type",
-      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     });
     response.end();
     return;
@@ -151,6 +164,101 @@ async function handle(
   const parts = pathParts(url.pathname);
   if (request.method === "GET" && url.pathname === "/health") {
     send(response, 200, { name: "law-analyzer-api", status: "ok" });
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "provider"
+  ) {
+    send(response, 200, {
+      provider: getAIProviderStatus(),
+      ocr: getMistralOCRStatus(),
+    });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    parts.length === 3 &&
+    parts[0] === "ai" &&
+    parts[1] === "provider" &&
+    parts[2] === "test"
+  ) {
+    const body = parseJson(await readBody(request));
+    send(response, 200, { test: await testAIProvider(readAIProviderInput(body)) });
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "ocr"
+  ) {
+    send(response, 200, { ocr: getMistralOCRStatus() });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    parts.length === 3 &&
+    parts[0] === "ai" &&
+    parts[1] === "ocr" &&
+    parts[2] === "test"
+  ) {
+    const body = parseJson(await readBody(request));
+    send(response, 200, { test: await testMistralOCR(readAIProviderInput(body)) });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "ocr"
+  ) {
+    const body = parseJson(await readBody(request));
+    send(response, 200, {
+      ocr: await saveMistralOCR(readAIProviderInput(body)),
+    });
+    return;
+  }
+  if (
+    request.method === "DELETE" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "ocr"
+  ) {
+    send(response, 200, { ocr: removeMistralOCR() });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "provider"
+  ) {
+    const body = parseJson(await readBody(request));
+    send(response, 200, {
+      provider: await saveAIProvider(readAIProviderInput(body)),
+    });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    parts.length === 3 &&
+    parts[0] === "ai" &&
+    parts[1] === "provider" &&
+    parts[2] === "simulated"
+  ) {
+    send(response, 200, { provider: useSimulatedAI() });
+    return;
+  }
+  if (
+    request.method === "DELETE" &&
+    parts.length === 2 &&
+    parts[0] === "ai" &&
+    parts[1] === "provider"
+  ) {
+    send(response, 200, { provider: removeAIProvider() });
     return;
   }
   if (
@@ -328,6 +436,10 @@ async function handle(
 
 const server = createServer((request, response) => {
   void handle(request, response).catch((error: unknown) => {
+    if (error instanceof AIProviderError) {
+      errorResponse(response, error.status, error.code, error.message);
+      return;
+    }
     const message = error instanceof Error ? error.message : "Error interno";
     const status = /PDF|archivo|MIME|cuerpo|limite|boundary|file/.test(message)
       ? 400
@@ -342,6 +454,19 @@ const server = createServer((request, response) => {
 });
 
 await mkdir(storageDirectory, { recursive: true });
+
+function readAIProviderInput(body: Record<string, unknown>): {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+} {
+  return {
+    baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : "",
+    apiKey: typeof body.apiKey === "string" ? body.apiKey : "",
+    model: typeof body.model === "string" ? body.model : "",
+  };
+}
+
 server.listen(port, () => {
   console.log(`API listening on port ${port}`);
 });

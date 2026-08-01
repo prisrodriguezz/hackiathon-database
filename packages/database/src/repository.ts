@@ -93,6 +93,7 @@ function analysisFromRow(row: Row): LawAnalysisRecord {
     documentId: String(row.document_id),
     status: row.status as AnalysisStatus,
     summary: row.summary as string | undefined,
+    provider: row.provider as string | undefined,
     model: row.model as string | undefined,
     durationMs: row.duration_ms === null ? undefined : Number(row.duration_ms),
     result: row.result_json ? JSON.parse(String(row.result_json)) : undefined,
@@ -516,15 +517,22 @@ export function createAnalysis(
   input: {
     documentId: string;
     status?: AnalysisStatus;
+    provider?: string;
     model?: string;
   },
 ): LawAnalysisRecord {
   const id = randomUUID();
   database
     .prepare(
-      "INSERT INTO analyses (id, document_id, status, model) VALUES (?, ?, ?, ?)",
+      "INSERT INTO analyses (id, document_id, status, provider, model) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(id, input.documentId, input.status ?? "queued", input.model ?? null);
+    .run(
+      id,
+      input.documentId,
+      input.status ?? "queued",
+      input.provider ?? null,
+      input.model ?? null,
+    );
   const row = database
     .prepare("SELECT * FROM analyses WHERE id = ?")
     .get(id) as Row;

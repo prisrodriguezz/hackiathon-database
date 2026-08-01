@@ -8,6 +8,7 @@ import {
   updateProcessingTask,
   type SqliteDatabase,
 } from "@law-analyzer/database";
+import { getMistralOCRConfig, MistralOCRClient } from "@law-analyzer/ai";
 import { extractText, splitIntoFragments } from "@law-analyzer/parser";
 
 const database: SqliteDatabase = openDatabase(
@@ -24,7 +25,24 @@ async function processQueuedExtraction(
   updateProcessingTask(database, taskId, "running");
   updateDocumentStatus(database, documentId, "processing");
   try {
-    const parsed = await extractText(await readFile(document.filePath));
+    let usedOCR = false;
+    const ocrConfig = getMistralOCRConfig();
+    const parsed = await extractText(await readFile(document.filePath), ocrConfig ? {
+      ocr: async (pdf) => {
+        usedOCR = true;
+        const result = await new MistralOCRClient(ocrConfig).extract(pdf);
+        const pages = result.pages.map((page) => ({
+          pageNumber: page.index + 1,
+          text: page.markdown.trim(),
+        }));
+        return {
+          text: pages.map((page) => page.text).filter(Boolean).join("\n\n"),
+          pageCount: pages.length,
+          pages,
+          hasText: pages.some((page) => page.text.length > 0),
+        };
+      },
+    } : undefined);
     if (!parsed.hasText) {
       updateDocumentStatus(database, documentId, "pending_review", {
         textOrigin: "ocr",
@@ -37,11 +55,11 @@ async function processQueuedExtraction(
           pageNumber: fragment.pageNumber,
           positionStart: fragment.positionStart,
           positionEnd: fragment.positionEnd,
-          textOrigin: "extracted",
+          textOrigin: usedOCR ? "ocr" : "extracted",
         });
       }
       updateDocumentStatus(database, documentId, "ready", {
-        textOrigin: "extracted",
+        textOrigin: usedOCR ? "ocr" : "extracted",
       });
     }
     updateProcessingTask(database, taskId, "completed");

@@ -16,6 +16,10 @@ export interface PdfValidationOptions {
   maxBytes?: number;
 }
 
+export interface TextExtractionOptions {
+  ocr?: (pdf: Uint8Array) => Promise<ParsedDocument>;
+}
+
 export class PdfValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -93,7 +97,10 @@ function getPageCount(pdf: string): number {
   return Math.max(1, (pdf.match(/\/Type\s*\/Page\b/g) ?? []).length);
 }
 
-export async function extractText(pdf: Uint8Array): Promise<ParsedDocument> {
+export async function extractText(
+  pdf: Uint8Array,
+  options: TextExtractionOptions = {},
+): Promise<ParsedDocument> {
   validatePdf(pdf);
   const source = sourceText(pdf);
   const text = extractPdfText(source);
@@ -105,6 +112,7 @@ export async function extractText(pdf: Uint8Array): Promise<ParsedDocument> {
   }));
   if (pages.every((page) => page.text.length === 0) && text.length > 0)
     pages[0]!.text = text;
+  if (text.length === 0 && options.ocr) return options.ocr(pdf);
   return { text, pageCount, pages, hasText: text.length > 0 };
 }
 

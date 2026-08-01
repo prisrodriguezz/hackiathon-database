@@ -101,6 +101,7 @@ export interface LawAnalysisRecord {
   documentId: string;
   status: AnalysisStatus;
   summary?: string;
+  provider?: string;
   model?: string;
   durationMs?: number;
   result?: unknown;
