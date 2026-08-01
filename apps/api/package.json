@@ -1,0 +1,29 @@
+{
+  "name": "@legislative/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API HTTP (Hono + Bun) del sistema de análisis legislativo.",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.0",
+    "@legislative/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.33",
+    "postgres": "^3.4.9",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "catalog:"
+  }
+}

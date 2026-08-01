@@ -1,0 +1,36 @@
+{
+  "name": "legislative-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo para un sistema de análisis legislativo asistido por IA.",
+  "type": "module",
+  "packageManager": "pnpm@11.1.3",
+  "engines": {
+    "node": ">=22.12.0",
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --filter \"./packages/*\" run build && concurrently -k -n packages,api,frontend -c auto \"pnpm -r --filter \"./packages/*\" run dev\" \"pnpm --filter @legislative/api run dev\" \"pnpm --filter @legislative/frontend run dev\"",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "pnpm -r exec rm -rf dist",
+    "db:generate": "pnpm --filter @legislative/api run db:generate",
+    "db:migrate": "pnpm --filter @legislative/api run db:migrate",
+    "db:push": "pnpm --filter @legislative/api run db:push"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "catalog:",
+    "concurrently": "^10.0.4",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.8.0",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.65.0"
+  }
+}
