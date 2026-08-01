@@ -6,5 +6,8 @@ build/
 !.env.example
 storage/*
 !storage/.gitkeep
+*.db
+*.db-shm
+*.db-wal
 coverage/
 .DS_Store

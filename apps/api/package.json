@@ -11,7 +11,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@law-analyzer/ai": "workspace:*",
     "@law-analyzer/database": "workspace:*",
+    "@law-analyzer/parser": "workspace:*",
     "@law-analyzer/shared": "workspace:*"
   },
   "devDependencies": {
